@@ -1,0 +1,853 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <title>MindFlip - Responsive 3D Memory Card Game</title>
+    
+    <!-- External Libraries -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@500;600;700;800&display=swap" rel="stylesheet">
+
+    <style>
+        :root {
+            --cols: 4;
+            --rows: 4;
+            --card-aspect: 3 / 4;
+        }
+
+        * {
+            font-family: 'Plus Jakarta Sans', sans-serif;
+            box-sizing: border-box;
+            user-select: none;
+            -webkit-user-select: none;
+            -webkit-tap-highlight-color: transparent;
+            margin: 0;
+            padding: 0;
+        }
+
+        /* Prevent vertical/horizontal viewport scrolling on all devices */
+        html, body {
+            width: 100%;
+            height: 100vh;
+            height: 100dvh;
+            overflow: hidden;
+            background: #0f172a;
+            touch-action: manipulation;
+        }
+
+        /* Ambient Dynamic Animated Background Blur Shapes */
+        .ambient-mesh {
+            position: fixed;
+            inset: 0;
+            z-index: 0;
+            overflow: hidden;
+            pointer-events: none;
+            background: radial-gradient(circle at 50% 50%, #1e1b4b 0%, #0f172a 100%);
+        }
+
+        .ambient-blob {
+            position: absolute;
+            border-radius: 50%;
+            filter: blur(80px);
+            opacity: 0.45;
+            animation: blobPulse 12s ease-in-out infinite alternate;
+        }
+
+        .blob-1 {
+            top: -10%;
+            left: -10%;
+            width: 55vw;
+            height: 55vw;
+            background: #6366f1;
+        }
+
+        .blob-2 {
+            bottom: -15%;
+            right: -10%;
+            width: 60vw;
+            height: 60vw;
+            background: #a855f7;
+            animation-delay: -4s;
+        }
+
+        .blob-3 {
+            top: 40%;
+            left: 30%;
+            width: 45vw;
+            height: 45vw;
+            background: #ec4899;
+            animation-delay: -8s;
+        }
+
+        @keyframes blobPulse {
+            0% { transform: translate(0px, 0px) scale(1); }
+            50% { transform: translate(30px, -20px) scale(1.08); }
+            100% { transform: translate(-20px, 30px) scale(0.95); }
+        }
+
+        /* Glassmorphism Surface Tokens */
+        .glass-card {
+            background: rgba(255, 255, 255, 0.07);
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
+            border: 1px solid rgba(255, 255, 255, 0.12);
+            box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
+        }
+
+        .glass-btn {
+            background: rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.18);
+            transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+            touch-action: manipulation;
+        }
+
+        .glass-btn:hover {
+            background: rgba(255, 255, 255, 0.18);
+            border-color: rgba(255, 255, 255, 0.3);
+            transform: translateY(-1px);
+        }
+
+        .glass-btn:active {
+            transform: translateY(1px) scale(0.97);
+        }
+
+        /* 
+           Viewport Auto-Scaling Responsive Grid Container 
+           Calculates grid sizing dynamically so board never spills outside viewport 
+        */
+        .game-grid-container {
+            display: grid;
+            grid-template-columns: repeat(var(--cols), minmax(0, 1fr));
+            grid-template-rows: repeat(var(--rows), minmax(0, 1fr));
+            gap: clamp(0.35rem, 1.2vh, 0.85rem);
+            width: 100%;
+            height: 100%;
+            max-width: calc((100vh - 170px) * (var(--cols) / var(--rows)) * 0.75);
+            max-height: calc(100vh - 170px);
+            aspect-ratio: calc(var(--cols) * 0.75) / var(--rows);
+            margin: auto;
+        }
+
+        /* Hardware Accelerated 3D Flip Card Architecture */
+        .card-wrapper {
+            perspective: 1000px;
+            width: 100%;
+            height: 100%;
+            position: relative;
+            touch-action: manipulation;
+        }
+
+        .card-inner {
+            position: absolute;
+            inset: 0;
+            width: 100%;
+            height: 100%;
+            transform-style: preserve-3d;
+            transition: transform 0.5s cubic-bezier(0.34, 1.56, 0.64, 1);
+            will-change: transform;
+            cursor: pointer;
+            border-radius: clamp(0.5rem, 1.5vw, 1rem);
+        }
+
+        .card-wrapper.flipped .card-inner {
+            transform: rotateY(180deg);
+        }
+
+        .card-face {
+            position: absolute;
+            inset: 0;
+            width: 100%;
+            height: 100%;
+            -webkit-backface-visibility: hidden;
+            backface-visibility: hidden;
+            border-radius: inherit;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.25);
+            border: 1px solid rgba(255, 255, 255, 0.15);
+            overflow: hidden;
+        }
+
+        /* Card Back (Default Face) */
+        .card-back {
+            background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%);
+            z-index: 2;
+            transform: rotateY(0deg);
+        }
+
+        .card-back-pattern {
+            position: absolute;
+            inset: 4px;
+            border-radius: calc(inherit - 2px);
+            border: 1.5px dashed rgba(255, 255, 255, 0.15);
+            background: radial-gradient(circle, rgba(99, 102, 241, 0.15) 0%, transparent 70%);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .card-back-icon {
+            font-size: clamp(1rem, 3.5vw, 2.2rem);
+            color: #818cf8;
+            opacity: 0.8;
+            transition: transform 0.3s ease;
+        }
+
+        .card-wrapper:hover .card-back-icon {
+            transform: scale(1.15) rotate(8deg);
+            opacity: 1;
+        }
+
+        /* Card Front (Revealed Face) */
+        .card-front {
+            background: linear-gradient(135deg, #ffffff 0%, #f8fafc 100%);
+            transform: rotateY(180deg);
+            z-index: 1;
+        }
+
+        .card-icon {
+            font-size: clamp(1.2rem, 4vw, 2.75rem);
+            filter: drop-shadow(0 4px 6px rgba(0, 0, 0, 0.15));
+        }
+
+        /* Match and Error Visual Feedback Animations */
+        @keyframes pulseMatched {
+            0% { transform: rotateY(180deg) scale(1); box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.7); }
+            50% { transform: rotateY(180deg) scale(1.06); box-shadow: 0 0 20px 4px rgba(16, 185, 129, 0.5); }
+            100% { transform: rotateY(180deg) scale(1); box-shadow: 0 0 0 0 rgba(16, 185, 129, 0); }
+        }
+
+        .card-wrapper.matched .card-front {
+            border-color: #10b981;
+            background: linear-gradient(135deg, #ecfdf5 0%, #ffffff 100%);
+        }
+
+        .card-wrapper.matched .card-inner {
+            animation: pulseMatched 0.5s ease-out forwards;
+        }
+
+        @keyframes shakeMismatch {
+            0%, 100% { transform: rotateY(180deg) translateX(0); }
+            20% { transform: rotateY(180deg) translateX(-6px); }
+            40% { transform: rotateY(180deg) translateX(6px); }
+            60% { transform: rotateY(180deg) translateX(-4px); }
+            80% { transform: rotateY(180deg) translateX(4px); }
+        }
+
+        .card-wrapper.shake .card-inner {
+            animation: shakeMismatch 0.4s ease-in-out;
+        }
+
+        /* Responsive Text Clamps */
+        .text-fluid-title { font-size: clamp(1rem, 2.5vw, 1.5rem); }
+        .text-fluid-label { font-size: clamp(0.65rem, 1.2vw, 0.8rem); }
+        .text-fluid-val { font-size: clamp(0.85rem, 2vw, 1.25rem); }
+
+        /* Canvas Overlay */
+        #confetti-canvas {
+            position: fixed;
+            inset: 0;
+            width: 100vw;
+            height: 100vh;
+            pointer-events: none;
+            z-index: 90;
+        }
+    </style>
+</head>
+<body class="flex flex-col justify-between items-center text-white h-full w-full p-2 sm:p-4 relative">
+
+    <!-- Ambient Mesh Background -->
+    <div class="ambient-mesh">
+        <div class="ambient-blob blob-1"></div>
+        <div class="ambient-blob blob-2"></div>
+        <div class="ambient-blob blob-3"></div>
+    </div>
+
+    <!-- Victory Particle Canvas -->
+    <canvas id="confetti-canvas"></canvas>
+
+    <!-- Main Full Viewport Centered App Layout -->
+    <div class="z-10 w-full max-w-4xl h-full flex flex-col justify-between items-center mx-auto my-auto py-1">
+        
+        <!-- Header & Action Controls -->
+        <header class="w-full flex justify-between items-center gap-2 mb-2 shrink-0">
+            <div class="flex items-center gap-2 sm:gap-3">
+                <div class="w-8 h-8 sm:w-10 sm:h-10 rounded-xl bg-gradient-to-tr from-indigo-500 to-purple-500 flex items-center justify-center shadow-lg shadow-indigo-500/30 text-white font-extrabold text-fluid-val">
+                    <i class="fa-solid fa-brain"></i>
+                </div>
+                <div>
+                    <h1 class="font-extrabold tracking-tight text-white leading-none text-fluid-title">Mind<span class="text-indigo-400">Flip</span></h1>
+                    <p class="text-fluid-label font-medium text-slate-400">3D Matching Game</p>
+                </div>
+            </div>
+
+            <!-- Controls (Level Selector, Sound, Reset) -->
+            <div class="flex items-center gap-1.5 sm:gap-2">
+                <select id="level-select" class="glass-btn px-2 py-1.5 sm:px-3 sm:py-2 rounded-xl text-fluid-label font-bold text-slate-200 outline-none cursor-pointer">
+                    <option value="1" class="bg-slate-900 text-white">Lvl 1 (3x4)</option>
+                    <option value="2" class="bg-slate-900 text-white" selected>Lvl 2 (4x4)</option>
+                    <option value="3" class="bg-slate-900 text-white">Lvl 3 (4x5)</option>
+                </select>
+
+                <button id="sound-btn" class="glass-btn min-w-[38px] h-[36px] sm:h-[40px] px-2.5 rounded-xl font-bold text-slate-200 flex items-center justify-center gap-1.5 text-fluid-label" title="Toggle Audio">
+                    <i id="sound-icon" class="fa-solid fa-volume-high text-indigo-400"></i>
+                </button>
+
+                <button id="reset-btn" class="glass-btn px-3 py-1.5 sm:px-4 sm:py-2 rounded-xl font-bold text-slate-200 flex items-center gap-1.5 text-fluid-label" title="Restart Game">
+                    <i class="fa-solid fa-rotate-right text-indigo-400"></i>
+                    <span class="hidden xs:inline">Reset</span>
+                </button>
+            </div>
+        </header>
+
+        <!-- Dynamic Game Stats Bar -->
+        <section class="w-full glass-card rounded-xl sm:rounded-2xl p-2 sm:p-3 mb-2 shrink-0">
+            <div class="grid grid-cols-4 gap-1.5 sm:gap-3 text-center">
+                <div class="p-1.5 rounded-lg bg-white/5 border border-white/10">
+                    <span class="block text-fluid-label font-semibold text-slate-400 uppercase tracking-wider">Level</span>
+                    <span id="level-display" class="text-fluid-val font-black text-indigo-400">2</span>
+                </div>
+                <div class="p-1.5 rounded-lg bg-white/5 border border-white/10">
+                    <span class="block text-fluid-label font-semibold text-slate-400 uppercase tracking-wider">Moves</span>
+                    <span id="moves-display" class="text-fluid-val font-black text-white">0</span>
+                </div>
+                <div class="p-1.5 rounded-lg bg-white/5 border border-white/10">
+                    <span class="block text-fluid-label font-semibold text-slate-400 uppercase tracking-wider">Time</span>
+                    <span id="timer-display" class="text-fluid-val font-black text-white">00:00</span>
+                </div>
+                <div class="p-1.5 rounded-lg bg-white/5 border border-white/10 flex flex-col justify-center items-center">
+                    <span class="block text-fluid-label font-semibold text-slate-400 uppercase tracking-wider">Pairs</span>
+                    <span id="pairs-display" class="text-fluid-val font-black text-emerald-400">0/8</span>
+                </div>
+            </div>
+        </section>
+
+        <!-- Center Flexible Gameplay Area -->
+        <main class="w-full flex-1 flex items-center justify-center min-h-0 relative my-auto">
+            <div id="game-grid" class="game-grid-container">
+                <!-- Dynamically rendered by JS -->
+            </div>
+        </main>
+
+        <!-- Compact Footer -->
+        <footer class="mt-1 text-center text-fluid-label font-medium text-slate-500 shrink-0">
+            Fit-to-Screen Auto Scaled Architecture
+        </footer>
+
+    </div>
+
+    <!-- Win Level Modal -->
+    <div id="win-modal" class="fixed inset-0 z-50 bg-slate-950/70 backdrop-blur-md flex items-center justify-center p-4 opacity-0 pointer-events-none transition-all duration-300">
+        <div id="win-modal-card" class="glass-card bg-slate-900/90 rounded-2xl sm:rounded-3xl p-6 max-w-xs sm:max-w-sm w-full text-center shadow-2xl transform scale-90 transition-all duration-300 border border-white/20">
+            
+            <div class="w-16 h-16 mx-auto mb-3 rounded-2xl bg-gradient-to-tr from-amber-400 to-amber-200 text-slate-950 flex items-center justify-center text-3xl shadow-lg shadow-amber-500/20">
+                <i class="fa-solid fa-trophy"></i>
+            </div>
+
+            <h2 id="modal-title" class="text-xl sm:text-2xl font-black text-white mb-1">Level Complete!</h2>
+            <p id="modal-subtitle" class="text-xs sm:text-sm text-slate-400 mb-4">Exceptional memory performance!</p>
+
+            <div class="bg-white/5 rounded-xl p-3 mb-5 border border-white/10 grid grid-cols-2 gap-3 text-left">
+                <div>
+                    <span class="block text-fluid-label text-slate-400">Total Moves</span>
+                    <span id="modal-moves" class="text-fluid-val font-black text-white">0</span>
+                </div>
+                <div>
+                    <span class="block text-fluid-label text-slate-400">Time Spent</span>
+                    <span id="modal-time" class="text-fluid-val font-black text-white">00:00</span>
+                </div>
+                <div class="col-span-2 border-t border-white/10 pt-2 flex justify-between items-center">
+                    <span class="text-fluid-label text-slate-400">Rating</span>
+                    <div id="modal-stars" class="flex gap-1 text-amber-400 text-fluid-val">
+                        <i class="fa-solid fa-star"></i>
+                        <i class="fa-solid fa-star"></i>
+                        <i class="fa-solid fa-star"></i>
+                    </div>
+                </div>
+            </div>
+
+            <button id="next-level-btn" class="w-full py-3 rounded-xl bg-gradient-to-r from-indigo-500 to-purple-600 hover:from-indigo-600 hover:to-purple-700 active:scale-98 text-white font-black text-sm shadow-lg shadow-indigo-500/25 transition-all flex items-center justify-center gap-2">
+                <span>Continue</span>
+                <i class="fa-solid fa-arrow-right"></i>
+            </button>
+        </div>
+    </div>
+
+    <script>
+        /* ==========================================================================
+           1. WEB AUDIO API SYNTHESIZER (Pure JS Sound FX)
+           ========================================================================== */
+        class SoundSynth {
+            constructor() {
+                this.ctx = null;
+                this.muted = false;
+            }
+
+            init() {
+                if (!this.ctx) {
+                    const AudioCtx = window.AudioContext || window.webkitAudioContext;
+                    this.ctx = new AudioCtx();
+                }
+                if (this.ctx && this.ctx.state === 'suspended') {
+                    this.ctx.resume();
+                }
+            }
+
+            playFlip() {
+                if (this.muted) return;
+                this.init();
+                if (!this.ctx) return;
+
+                const osc = this.ctx.createOscillator();
+                const gain = this.ctx.createGain();
+
+                osc.type = 'sine';
+                osc.frequency.setValueAtTime(280, this.ctx.currentTime);
+                osc.frequency.exponentialRampToValueAtTime(560, this.ctx.currentTime + 0.08);
+
+                gain.gain.setValueAtTime(0.12, this.ctx.currentTime);
+                gain.gain.exponentialRampToValueAtTime(0.01, this.ctx.currentTime + 0.08);
+
+                osc.connect(gain);
+                gain.connect(this.ctx.destination);
+
+                osc.start();
+                osc.stop(this.ctx.currentTime + 0.08);
+            }
+
+            playMatch() {
+                if (this.muted) return;
+                this.init();
+                if (!this.ctx) return;
+
+                const now = this.ctx.currentTime;
+                const freqs = [523.25, 659.25, 783.99, 1046.50];
+
+                freqs.forEach((f, idx) => {
+                    const osc = this.ctx.createOscillator();
+                    const gain = this.ctx.createGain();
+
+                    osc.type = 'triangle';
+                    osc.frequency.setValueAtTime(f, now + idx * 0.04);
+
+                    gain.gain.setValueAtTime(0.12, now + idx * 0.04);
+                    gain.gain.exponentialRampToValueAtTime(0.001, now + idx * 0.04 + 0.2);
+
+                    osc.connect(gain);
+                    gain.connect(this.ctx.destination);
+
+                    osc.start(now + idx * 0.04);
+                    osc.stop(now + idx * 0.04 + 0.2);
+                });
+            }
+
+            playMismatch() {
+                if (this.muted) return;
+                this.init();
+                if (!this.ctx) return;
+
+                const now = this.ctx.currentTime;
+                const osc = this.ctx.createOscillator();
+                const gain = this.ctx.createGain();
+
+                osc.type = 'sawtooth';
+                osc.frequency.setValueAtTime(200, now);
+                osc.frequency.linearRampToValueAtTime(140, now + 0.18);
+
+                gain.gain.setValueAtTime(0.08, now);
+                gain.gain.exponentialRampToValueAtTime(0.01, now + 0.18);
+
+                osc.connect(gain);
+                gain.connect(this.ctx.destination);
+
+                osc.start(now);
+                osc.stop(now + 0.18);
+            }
+
+            playFanfare() {
+                if (this.muted) return;
+                this.init();
+                if (!this.ctx) return;
+
+                const now = this.ctx.currentTime;
+                const notes = [440, 554.37, 659.25, 880, 1108.73];
+
+                notes.forEach((f, idx) => {
+                    const osc = this.ctx.createOscillator();
+                    const gain = this.ctx.createGain();
+
+                    osc.type = 'triangle';
+                    osc.frequency.setValueAtTime(f, now + idx * 0.08);
+
+                    gain.gain.setValueAtTime(0.15, now + idx * 0.08);
+                    gain.gain.exponentialRampToValueAtTime(0.001, now + idx * 0.08 + 0.35);
+
+                    osc.connect(gain);
+                    gain.connect(this.ctx.destination);
+
+                    osc.start(now + idx * 0.08);
+                    osc.stop(now + idx * 0.08 + 0.35);
+                });
+            }
+        }
+
+        /* ==========================================================================
+           2. CANVAS CONFETTI PARTICLE SYSTEM
+           ========================================================================== */
+        class ConfettiSystem {
+            constructor(canvasId) {
+                this.canvas = document.getElementById(canvasId);
+                this.ctx = this.canvas.getContext('2d');
+                this.particles = [];
+                this.animId = null;
+
+                this.resize();
+                window.addEventListener('resize', () => this.resize());
+            }
+
+            resize() {
+                this.canvas.width = window.innerWidth;
+                this.canvas.height = window.innerHeight;
+            }
+
+            burst() {
+                this.particles = [];
+                const palette = ['#6366f1', '#a855f7', '#ec4899', '#10b981', '#f59e0b', '#3b82f6', '#f43f5e'];
+
+                for (let i = 0; i < 100; i++) {
+                    this.particles.push({
+                        x: this.canvas.width / 2,
+                        y: this.canvas.height / 2,
+                        vx: (Math.random() - 0.5) * 16,
+                        vy: (Math.random() - 0.7) * 16,
+                        size: Math.random() * 6 + 4,
+                        color: palette[Math.floor(Math.random() * palette.length)],
+                        rot: Math.random() * 360,
+                        vRot: (Math.random() - 0.5) * 10,
+                        gravity: 0.22,
+                        opacity: 1
+                    });
+                }
+
+                if (!this.animId) {
+                    this.loop();
+                }
+            }
+
+            loop() {
+                this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+
+                this.particles.forEach((p, idx) => {
+                    p.x += p.vx;
+                    p.y += p.vy;
+                    p.vy += p.gravity;
+                    p.rot += p.vRot;
+                    p.opacity -= 0.009;
+
+                    this.ctx.save();
+                    this.ctx.translate(p.x, p.y);
+                    this.ctx.rotate((p.rot * Math.PI) / 180);
+                    this.ctx.globalAlpha = Math.max(0, p.opacity);
+                    this.ctx.fillStyle = p.color;
+                    this.ctx.fillRect(-p.size / 2, -p.size / 2, p.size, p.size);
+                    this.ctx.restore();
+
+                    if (p.opacity <= 0) {
+                        this.particles.splice(idx, 1);
+                    }
+                });
+
+                if (this.particles.length > 0) {
+                    this.animId = requestAnimationFrame(() => this.loop());
+                } else {
+                    this.animId = null;
+                }
+            }
+        }
+
+        /* ==========================================================================
+           3. CORE GAME LOGIC & LEVEL DEFINITIONS
+           ========================================================================== */
+        const ICON_BANK = [
+            { icon: 'fa-rocket', color: 'text-rose-500' },
+            { icon: 'fa-gamepad', color: 'text-indigo-500' },
+            { icon: 'fa-gem', color: 'text-emerald-500' },
+            { icon: 'fa-crown', color: 'text-amber-500' },
+            { icon: 'fa-ghost', color: 'text-purple-500' },
+            { icon: 'fa-bolt', color: 'text-yellow-500' },
+            { icon: 'fa-fire', color: 'text-orange-500' },
+            { icon: 'fa-heart', color: 'text-pink-500' },
+            { icon: 'fa-star', color: 'text-amber-400' },
+            { icon: 'fa-puzzle-piece', color: 'text-teal-500' },
+            { icon: 'fa-paper-plane', color: 'text-cyan-500' },
+            { icon: 'fa-lightbulb', color: 'text-lime-500' }
+        ];
+
+        const LEVEL_CONFIGS = {
+            1: { cols: 4, rows: 3, pairs: 6, starTarget: 9 },
+            2: { cols: 4, rows: 4, pairs: 8, starTarget: 13 },
+            3: { cols: 5, rows: 4, pairs: 10, starTarget: 17 }
+        };
+
+        class MemoryGameApp {
+            constructor() {
+                this.synth = new SoundSynth();
+                this.confetti = new ConfettiSystem('confetti-canvas');
+
+                this.level = 2;
+                this.moves = 0;
+                this.timer = 0;
+                this.timerId = null;
+                this.timerStarted = false;
+
+                this.cards = [];
+                this.flipped = [];
+                this.matchedCount = 0;
+                this.isLocked = false;
+
+                // DOM Elements
+                this.gridEl = document.getElementById('game-grid');
+                this.levelSelect = document.getElementById('level-select');
+                this.levelDisplay = document.getElementById('level-display');
+                this.movesDisplay = document.getElementById('moves-display');
+                this.timerDisplay = document.getElementById('timer-display');
+                this.pairsDisplay = document.getElementById('pairs-display');
+
+                this.winModal = document.getElementById('win-modal');
+                this.winModalCard = document.getElementById('win-modal-card');
+
+                this.bindEvents();
+                this.initLevel(this.level);
+            }
+
+            bindEvents() {
+                this.levelSelect.addEventListener('change', (e) => {
+                    this.initLevel(parseInt(e.target.value));
+                });
+
+                document.getElementById('reset-btn').addEventListener('click', () => {
+                    this.initLevel(this.level);
+                });
+
+                document.getElementById('sound-btn').addEventListener('click', () => {
+                    this.synth.muted = !this.synth.muted;
+                    const icon = document.getElementById('sound-icon');
+                    icon.className = this.synth.muted 
+                        ? 'fa-solid fa-volume-xmark text-slate-400' 
+                        : 'fa-solid fa-volume-high text-indigo-400';
+                });
+
+                document.getElementById('next-level-btn').addEventListener('click', () => {
+                    this.hideWinModal();
+                    if (this.level < Object.keys(LEVEL_CONFIGS).length) {
+                        this.levelSelect.value = (this.level + 1).toString();
+                        this.initLevel(this.level + 1);
+                    } else {
+                        this.levelSelect.value = "1";
+                        this.initLevel(1);
+                    }
+                });
+            }
+
+            initLevel(lvl) {
+                this.level = lvl;
+                this.moves = 0;
+                this.timer = 0;
+                this.matchedCount = 0;
+                this.flipped = [];
+                this.isLocked = false;
+
+                this.stopTimer();
+                this.timerStarted = false;
+
+                const cfg = LEVEL_CONFIGS[this.level];
+
+                // Update dynamic CSS variables for precision aspect-ratio grid scaling
+                document.documentElement.style.setProperty('--cols', cfg.cols);
+                document.documentElement.style.setProperty('--rows', cfg.rows);
+
+                this.levelDisplay.textContent = this.level;
+                this.movesDisplay.textContent = '0';
+                this.timerDisplay.textContent = '00:00';
+                this.pairsDisplay.textContent = `0/${cfg.pairs}`;
+
+                this.renderGrid(cfg);
+            }
+
+            startTimer() {
+                if (this.timerStarted) return;
+                this.timerStarted = true;
+                this.timerId = setInterval(() => {
+                    this.timer++;
+                    const m = Math.floor(this.timer / 60).toString().padStart(2, '0');
+                    const s = (this.timer % 60).toString().padStart(2, '0');
+                    this.timerDisplay.textContent = `${m}:${s}`;
+                }, 1000);
+            }
+
+            stopTimer() {
+                if (this.timerId) {
+                    clearInterval(this.timerId);
+                    this.timerId = null;
+                }
+            }
+
+            renderGrid(cfg) {
+                this.gridEl.innerHTML = '';
+                const selected = ICON_BANK.slice(0, cfg.pairs);
+                const deck = [...selected, ...selected];
+
+                // Shuffle deck
+                for (let i = deck.length - 1; i > 0; i--) {
+                    const j = Math.floor(Math.random() * (i + 1));
+                    [deck[i], deck[j]] = [deck[j], deck[i]];
+                }
+
+                // Render cards
+                deck.forEach((item) => {
+                    const wrapper = document.createElement('div');
+                    wrapper.className = 'card-wrapper';
+                    wrapper.dataset.icon = item.icon;
+
+                    wrapper.innerHTML = `
+                        <div class="card-inner">
+                            <div class="card-face card-back">
+                                <div class="card-back-pattern">
+                                    <i class="fa-solid fa-brain card-back-icon"></i>
+                                </div>
+                            </div>
+                            <div class="card-face card-front">
+                                <i class="fa-solid ${item.icon} ${item.color} card-icon"></i>
+                            </div>
+                        </div>
+                    `;
+
+                    // Single touch/click handler
+                    const handleInteraction = (e) => {
+                        e.preventDefault();
+                        this.handleCardClick(wrapper);
+                    };
+
+                    wrapper.addEventListener('pointerdown', handleInteraction);
+                    this.gridEl.appendChild(wrapper);
+                });
+            }
+
+            handleCardClick(card) {
+                if (this.isLocked) return;
+                if (card.classList.contains('flipped') || card.classList.contains('matched')) return;
+
+                if (!this.timerStarted) {
+                    this.startTimer();
+                }
+
+                card.classList.add('flipped');
+                this.synth.playFlip();
+                this.flipped.push(card);
+
+                if (this.flipped.length === 2) {
+                    this.moves++;
+                    this.movesDisplay.textContent = this.moves;
+                    this.checkMatch();
+                }
+            }
+
+            checkMatch() {
+                this.isLocked = true;
+                const [c1, c2] = this.flipped;
+                const isMatch = c1.dataset.icon === c2.dataset.icon;
+                const cfg = LEVEL_CONFIGS[this.level];
+
+                if (isMatch) {
+                    setTimeout(() => {
+                        c1.classList.add('matched');
+                        c2.classList.add('matched');
+                        this.synth.playMatch();
+
+                        this.matchedCount++;
+                        this.pairsDisplay.textContent = `${this.matchedCount}/${cfg.pairs}`;
+                        this.flipped = [];
+                        this.isLocked = false;
+
+                        if (this.matchedCount === cfg.pairs) {
+                            this.handleWin();
+                        }
+                    }, 280);
+                } else {
+                    setTimeout(() => {
+                        c1.classList.add('shake');
+                        c2.classList.add('shake');
+                        this.synth.playMismatch();
+                    }, 300);
+
+                    setTimeout(() => {
+                        c1.classList.remove('flipped', 'shake');
+                        c2.classList.remove('flipped', 'shake');
+                        this.flipped = [];
+                        this.isLocked = false;
+                    }, 820);
+                }
+            }
+
+            handleWin() {
+                this.stopTimer();
+                this.synth.playFanfare();
+                this.confetti.burst();
+
+                const cfg = LEVEL_CONFIGS[this.level];
+                let stars = 3;
+                if (this.moves > cfg.starTarget + 6) stars = 1;
+                else if (this.moves > cfg.starTarget) stars = 2;
+
+                setTimeout(() => {
+                    const isLast = this.level === Object.keys(LEVEL_CONFIGS).length;
+                    document.getElementById('modal-title').textContent = isLast ? "Grand Master!" : "Level Complete!";
+                    document.getElementById('modal-subtitle').textContent = isLast 
+                        ? "You have conquered all game levels!" 
+                        : `Successfully cleared Level ${this.level}.`;
+
+                    document.getElementById('modal-moves').textContent = this.moves;
+                    document.getElementById('modal-time').textContent = this.timerDisplay.textContent;
+
+                    const starsEl = document.getElementById('modal-stars');
+                    starsEl.innerHTML = '';
+                    for (let i = 0; i < 3; i++) {
+                        const icon = document.createElement('i');
+                        icon.className = i < stars ? 'fa-solid fa-star text-amber-400' : 'fa-regular fa-star text-slate-600';
+                        starsEl.appendChild(icon);
+                    }
+
+                    const nextBtn = document.getElementById('next-level-btn');
+                    nextBtn.querySelector('span').textContent = isLast ? 'Play Again' : 'Next Level';
+
+                    this.showWinModal();
+                }, 400);
+            }
+
+            showWinModal() {
+                this.winModal.classList.remove('opacity-0', 'pointer-events-none');
+                this.winModalCard.classList.remove('scale-90');
+                this.winModalCard.classList.add('scale-100');
+            }
+
+            hideWinModal() {
+                this.winModal.classList.add('opacity-0', 'pointer-events-none');
+                this.winModalCard.classList.remove('scale-100');
+                this.winModalCard.classList.add('scale-90');
+            }
+        }
+
+        // Initialize application on load
+        window.addEventListener('DOMContentLoaded', () => {
+            new MemoryGameApp();
+        });
+    </script>
+</body>
+</html>
